@@ -404,51 +404,61 @@ module.exports = class alpaca extends Exchange {
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
         /**
          * @method
-         * @name blockchaincom#fetchOrderBook
+         * @name alpaca#fetchOrderBook
          * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
          * @param {str} symbol unified symbol of the market to fetch the order book for
          * @param {int|undefined} limit the maximum amount of order book entries to return
          * @param {dict} params extra parameters specific to the blockchaincom api endpoint
          * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
          */
-        return await this.fetchL1OrderBook (symbol, limit, params);
-    }
-
-    async fetchL1OrderBook (symbol, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const market = this.market (symbol);
         const id = market['id'];
         const request = {
-            'symbol': id,
+            'symbols': id,
         };
-        // specify exchange to avoid bidPrice > askPrice --- interexchange arbitrage opportunities
-        // needed to add to pass orderbook test: assert (bids[0][0] <= asks[0][0])
-        if (!('exchanges' in params)) {
-            params['exchanges'] = this.safeString (this.options, 'defaultExchange');
-        }
-        const response = await this.cryptoPublicGetCryptoSymbolXbboLatest (this.extend (request, params));
+        const response = await this.cryptoPublicGetCryptoLatestOrderbooks (this.extend (request, params));
         //
-        //  {
-        //      "symbol": "BTCUSD",
-        //      "xbbo": {
-        //      "t": "2021-11-16T22:16:00.468860416Z",
-        //      "ax": "FTX",
-        //      "ap": 60564,
-        //      "as": 0.36,
-        //      "bx": "FTX",
-        //      "bp": 60555,
-        //      "bs": 0.36
-        //  }
+        // {
+        //     "orderbooks":{
+        //        "BTC/USD":{
+        //           "a":[
+        //              {
+        //                 "p":22208,
+        //                 "s":0.0051
+        //              },
+        //              {
+        //                 "p":22209,
+        //                 "s":0.1123
+        //              },
+        //              {
+        //                 "p":22210,
+        //                 "s":0.2465
+        //              }
+        //           ],
+        //           "b":[
+        //              {
+        //                 "p":22203,
+        //                 "s":0.395
+        //              },
+        //              {
+        //                 "p":22202,
+        //                 "s":0.2465
+        //              },
+        //              {
+        //                 "p":22201,
+        //                 "s":0.6455
+        //              }
+        //           ],
+        //           "t":"2022-07-19T13:41:55.13210112Z"
+        //        }
+        //     }
+        // }
         //
-        const quote = this.safeValue (response, 'xbbo', {});
-        const shallow_bid = [ this.safeNumber (quote, 'bp'), this.safeNumber (quote, 'bs') ];
-        const shallow_ask = [ this.safeNumber (quote, 'ap'), this.safeNumber (quote, 'as') ];
-        const timestamp = this.milliseconds ();
-        const orderbook = {
-            'bids': [ shallow_bid ],
-            'asks': [ shallow_ask ],
-        };
-        return this.parseOrderBook (orderbook, symbol, timestamp);
+        const orderbooks = this.safeValue (response, 'orderbooks', {});
+        const rawOrderbook = this.safeValue (orderbooks, id, {});
+        const timestamp = this.parse8601 (this.safeString (rawOrderbook, 't'));
+        return this.parseOrderBook (rawOrderbook, market['symbol'], timestamp, 'b', 'a', 'p', 's');
     }
 
     async createOrder (symbol, type, side, amount, price = undefined, params = {}) {
