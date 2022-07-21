@@ -22,12 +22,12 @@ module.exports = class alpaca extends Exchange {
                 'api': {
                     'public': 'https://api.{hostname}/{version}',
                     'private': 'https://api.{hostname}/{version}',
-                    'crypto': 'https://data.{hostname}/{version}',
+                    'cryptoPublic': 'https://data.{hostname}/{version}',
                 },
                 'test': {
                     'public': 'https://paper-api.{hostname}/{version}',
                     'private': 'https://paper-api.{hostname}/{version}',
-                    'crypto': 'https://data.{hostname}/{version}',
+                    'cryptoPublic': 'https://data.{hostname}/{version}',
                 },
                 'doc': 'https://alpaca.markets/docs/',
                 'fees': 'https://alpaca.markets/support/what-are-the-fees-associated-with-crypto-trading/',
@@ -81,10 +81,12 @@ module.exports = class alpaca extends Exchange {
             },
             'api': {
                 'public': {
+                    'get': [
+                        'assets/public/beta',
+                    ],
                 },
                 'private': {
                     'get': [
-                        'assets',
                         'account',
                         'orders',
                         'orders/{order_id}',
@@ -150,7 +152,7 @@ module.exports = class alpaca extends Exchange {
                 'versions': {
                     'public': 'v2',
                     'private': 'v2',
-                    'crypto': 'v1beta1', // crypto beta
+                    'cryptoPublic': 'v1beta2', // crypto beta
                 },
                 'defaultExchange': 'CBSE',
                 'exchanges': [
@@ -226,38 +228,54 @@ module.exports = class alpaca extends Exchange {
             'asset_class': 'crypto',
             'tradeable': true,
         };
-        const assets = await this.privateGetAssets (this.extend (request, params));
+        const assets = await this.publicGetAssetsPublicBeta (this.extend (request, params));
         //
-        // {
-        //     "id": "904837e3-3b76-47ec-b432-046db621571b",
-        //     "class": "us_equity",
-        //     "exchange": "NASDAQ",
-        //     "symbol": "AAPL",
-        //     "status": "active",
-        //     "tradable": true,
-        //     "marginable": true,
-        //     "shortable": true,
-        //     "easy_to_borrow": true,
-        //     "fractionable": true
-        //   }
+        //    [
+        //        {
+        //           "id":"a3ba8ac0-166d-460b-b17a-1f035622dd47",
+        //           "class":"crypto",
+        //           "exchange":"FTXU",
+        //           "symbol":"DOGEUSD",
+        //           "name":"Dogecoin",
+        //           "status":"active",
+        //           "tradable":true,
+        //           "marginable":false,
+        //           "shortable":false,
+        //           "easy_to_borrow":false,
+        //           "fractionable":true,
+        //           "min_order_size":"1",
+        //           "min_trade_increment":"1",
+        //           "price_increment":"0.0000005"
+        //        }
+        //    ]
         //
         const markets = [];
         for (let i = 0; i < assets.length; i++) {
             const asset = assets[i];
-            const id = this.safeString (asset, 'symbol');
-            const splitIndex = id.length - 3; // all markets settled with USD but the base might have 3/4/5 chars
-            const base = id.slice (0, splitIndex).toUpperCase ();
-            const quote = id.slice (splitIndex, id.length).toUpperCase ();
+            let marketId = this.safeString (asset, 'symbol');
+            let baseId = undefined;
+            let quoteId = undefined;
+            if (marketId.indexOf ('/') >= 0) {
+                const parts = marketId.split ('/');
+                baseId = this.safeString (parts, 0);
+                quoteId = this.safeString (parts, 1);
+            } else {
+                baseId = marketId.slice (0, 3).toUpperCase ();
+                quoteId = marketId.slice (3, 6).toUpperCase ();
+                marketId = baseId + '/' + quoteId; // exchanges requires this new format
+            }
+            const base = this.safeCurrencyCode (baseId);
+            const quote = this.safeCurrencyCode (quoteId);
             const symbol = base + '/' + quote;
-            const baseId = base.toLowerCase ();
-            const quoteId = quote.toLowerCase ();
+            const status = this.safeString (asset, 'status');
+            const active = (status === 'active');
             const precisions = this.safeValue (this.options, 'precision', {});
             const precision = this.safeValue (precisions, symbol, {});
             const amount = this.safeNumber (precision, 'amount');
             const price = this.safeNumber (precision, 'price');
             const minAmount = this.safeNumber (precision, 'minAmount');
             markets.push ({
-                'id': id,
+                'id': marketId,
                 'symbol': symbol,
                 'base': base,
                 'quote': quote,
@@ -271,7 +289,7 @@ module.exports = class alpaca extends Exchange {
                 'swap': false,
                 'future': false,
                 'option': false,
-                'active': undefined,
+                'active': active,
                 'contract': false,
                 'linear': undefined,
                 'inverse': undefined,
@@ -320,7 +338,7 @@ module.exports = class alpaca extends Exchange {
         if (!('exchanges' in params)) {
             params['exchanges'] = this.safeString (this.options, 'defaultExchange');
         }
-        const response = await this.cryptoPrivateGetCryptoSymbolXbboLatest (this.extend (request, params));
+        const response = await this.cryptoPublicGetCryptoSymbolXbboLatest (this.extend (request, params));
         //
         // {
         //     "symbol": "BTCUSD",
@@ -353,7 +371,7 @@ module.exports = class alpaca extends Exchange {
         const market = this.market (symbol);
         const id = market['id'];
         const request = {
-            'symbol': id,
+            'symbols': id,
         };
         if (since !== undefined) {
             request['start'] = this.iso8601 (since);
@@ -361,23 +379,26 @@ module.exports = class alpaca extends Exchange {
         if (limit !== undefined) {
             request['limit'] = parseInt (limit);
         }
-        const response = await this.cryptoPrivateGetCryptoSymbolTrades (this.extend (request, params));
+        const response = await this.cryptoPublicGetCryptoTrades (this.extend (request, params));
         //
         // {
-        //     "symbol": "BTCUSD",
-        //     "trades": [
-        //          {
-        //          "t": "2021-11-17T00:18:02.530806Z",
-        //          "x": "CBSE",
-        //          "p": 60011.36,
-        //          "s": 0.00956419,
-        //          "tks": "S",
-        //          "i": 237168320
-        //          },
+        //     "next_page_token":null,
+        //     "trades":{
+        //        "BTC/USD":[
+        //           {
+        //              "i":36440704,
+        //              "p":22625,
+        //              "s":0.0001,
+        //              "t":"2022-07-21T11:47:31.073391Z",
+        //              "tks":"B"
+        //           }
+        //        ]
+        //     }
         // }
         //
         const trades = this.safeValue (response, 'trades', {});
-        return this.parseTrades (trades, market, since, limit);
+        const trade = this.safeValue (trades, market['id'], {});
+        return this.parseTrade (trade, market);
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
@@ -405,7 +426,7 @@ module.exports = class alpaca extends Exchange {
         if (!('exchanges' in params)) {
             params['exchanges'] = this.safeString (this.options, 'defaultExchange');
         }
-        const response = await this.cryptoPrivateGetCryptoSymbolXbboLatest (this.extend (request, params));
+        const response = await this.cryptoPublicGetCryptoSymbolXbboLatest (this.extend (request, params));
         //
         //  {
         //      "symbol": "BTCUSD",
