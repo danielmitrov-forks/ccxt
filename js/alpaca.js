@@ -100,15 +100,15 @@ module.exports = class alpaca extends Exchange {
                         'orders/{order_id}',
                     ],
                 },
-                'crypto': {
-                    'private': {
-                        'get': [
-                            'crypto/{symbol}/quotes/latest',
-                            'crypto/{symbol}/trades/latest',
-                            'crypto/{symbol}/xbbo/latest',
-                            'crypto/{symbol}/trades',
-                        ],
-                    },
+                'cryptoPublic': {
+                    'get': [
+                        'crypto/latest/orderbooks',
+                        'crypto/trades',
+                        'crypto/quotes',
+                        'crypto/latest/quotes',
+                        'crypto/bars',
+                        'crypto/snapshots',
+                    ],
                 },
             },
             'precisionMode': TICK_SIZE,
