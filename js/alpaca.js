@@ -397,8 +397,8 @@ module.exports = class alpaca extends Exchange {
         // }
         //
         const trades = this.safeValue (response, 'trades', {});
-        const trade = this.safeValue (trades, market['id'], {});
-        return this.parseTrade (trade, market);
+        const symbolTrades = this.safeValue (trades, market['id'], {});
+        return this.parseTrades (symbolTrades, market, since, limit);
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
@@ -708,10 +708,7 @@ module.exports = class alpaca extends Exchange {
         //       "i":"355681339"
         //   }
         //
-        let symbol = this.safeString (trade, 'symbol', '');
-        if (market !== undefined) {
-            symbol = market['symbol'];
-        }
+        const symbol = this.safeSymbol (undefined, market);
         const datetime = this.safeString (trade, 't');
         const timestamp = this.parse8601 (datetime);
         const alpacaSide = this.safeString (trade, 'tks');
@@ -723,8 +720,6 @@ module.exports = class alpaca extends Exchange {
         }
         const priceString = this.safeString (trade, 'p');
         const amountString = this.safeString (trade, 's');
-        const price = this.parseNumber (priceString);
-        const amount = this.parseNumber (amountString);
         return this.safeTrade ({
             'info': trade,
             'id': this.safeString (trade, 'i'),
@@ -735,8 +730,8 @@ module.exports = class alpaca extends Exchange {
             'type': undefined,
             'side': side,
             'takerOrMaker': 'taker',
-            'price': price,
-            'amount': amount,
+            'price': priceString,
+            'amount': amountString,
             'cost': undefined,
             'fee': undefined,
         }, market);
