@@ -113,6 +113,23 @@ module.exports = class alpaca extends Exchange {
                     ],
                 },
             },
+            'timeframes': {
+                '1m': '1min',
+                '3m': '3min',
+                '5m': '5min',
+                '15m': '15min',
+                '30m': '30min',
+                '1h': '1H',
+                '2h': '2H',
+                '4h': '4H',
+                '6h': '6H',
+                '8h': '8H',
+                '12h': '12H',
+                '1d': '1D',
+                '3d': '3D',
+                '1w': '1W',
+                '1M': '1M',
+            },
             'precisionMode': TICK_SIZE,
             'requiredCredentials': {
                 'apiKey': true,
@@ -408,7 +425,7 @@ module.exports = class alpaca extends Exchange {
          * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
          * @param {str} symbol unified symbol of the market to fetch the order book for
          * @param {int|undefined} limit the maximum amount of order book entries to return
-         * @param {dict} params extra parameters specific to the blockchaincom api endpoint
+         * @param {dict} params extra parameters specific to the alpaca api endpoint
          * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
          */
         await this.loadMarkets ();
@@ -459,6 +476,90 @@ module.exports = class alpaca extends Exchange {
         const rawOrderbook = this.safeValue (orderbooks, id, {});
         const timestamp = this.parse8601 (this.safeString (rawOrderbook, 't'));
         return this.parseOrderBook (rawOrderbook, market['symbol'], timestamp, 'b', 'a', 'p', 's');
+    }
+
+    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name alpaca#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @param {str} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {str} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {dict} params extra parameters specific to the alpha api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'symbols': market['id'],
+            'timeframe': this.timeframes[timeframe],
+        };
+        if (limit !== undefined) {
+            request['limit'] = limit;
+        }
+        if (since !== undefined) {
+            request['start'] = parseInt (since / 1000);
+        }
+        const response = await this.cryptoPublicGetCryptoBars (this.extend (request, params));
+        //
+        //    {
+        //        "bars":{
+        //           "BTC/USD":[
+        //              {
+        //                 "c":22887,
+        //                 "h":22888,
+        //                 "l":22873,
+        //                 "n":11,
+        //                 "o":22883,
+        //                 "t":"2022-07-21T05:00:00Z",
+        //                 "v":1.1138,
+        //                 "vw":22883.0155324116
+        //              },
+        //              {
+        //                 "c":22895,
+        //                 "h":22895,
+        //                 "l":22884,
+        //                 "n":6,
+        //                 "o":22884,
+        //                 "t":"2022-07-21T05:01:00Z",
+        //                 "v":0.001,
+        //                 "vw":22889.5
+        //              }
+        //           ]
+        //        },
+        //        "next_page_token":"QlRDL1VTRHxNfDIwMjItMDctMjFUMDU6MDE6MDAuMDAwMDAwMDAwWg=="
+        //     }
+        //
+        const bars = this.safeValue (response, 'bars', {});
+        const ohlcvs = this.safeValue (bars, market['id'], {});
+        return this.parseOHLCVs (ohlcvs, market, timeframe, since, limit);
+    }
+
+    parseOHLCV (ohlcv, market = undefined) {
+        //
+        //     {
+        //        "c":22895,
+        //        "h":22895,
+        //        "l":22884,
+        //        "n":6,
+        //        "o":22884,
+        //        "t":"2022-07-21T05:01:00Z",
+        //        "v":0.001,
+        //        "vw":22889.5
+        //     }
+        //
+        const datetime = this.safeString (ohlcv, 't');
+        const timestamp = this.parse8601 (datetime);
+        return [
+            timestamp, // timestamp
+            this.safeNumber (ohlcv, 'o'), // open
+            this.safeNumber (ohlcv, 'h'), // high
+            this.safeNumber (ohlcv, 'l'), // low
+            this.safeNumber (ohlcv, 'c'), // close
+            this.safeNumber (ohlcv, 'v'), // volume
+        ];
     }
 
     async createOrder (symbol, type, side, amount, price = undefined, params = {}) {
